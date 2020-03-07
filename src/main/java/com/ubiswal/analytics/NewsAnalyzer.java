@@ -3,14 +3,13 @@ package com.ubiswal.analytics;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.*;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,51 +17,49 @@ import org.apache.commons.io.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-class TimeSeriesEntry {
+class Source{
     @Getter
     @Setter
-    @JsonProperty("1. open")
-    private float open;
+    private String name;
+}
+@JsonIgnoreProperties(ignoreUnknown = true)
+class Article{
     @Getter
     @Setter
-    @JsonProperty("2. high")
-    private float high;
+    private Source source;
     @Getter
     @Setter
-    @JsonProperty("3. low")
-    private float low;
+    private String author;
     @Getter
     @Setter
-    @JsonProperty("4. close")
-    private float close;
+    private String description;
     @Getter
     @Setter
-    @JsonProperty("5. volume")
-    private int volume;
-
+    private String url;
+    @Getter
+    @Setter
+    private String urlToImage;
 }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-class StockPrices {
-    //private String symbol;
+class ListOfArticles{
     @Getter
     @Setter
-    @JsonProperty("Time Series (5min)")
-    private Map<String, TimeSeriesEntry> timeSeriesEntries;
+    private List<Article> articles;
 }
 
-
-public class StocksAnalyzer extends AbstractAnalyzer {
+public class NewsAnalyzer extends AbstractAnalyzer {
     private AmazonS3 s3Client;
-    private AmazonDynamoDB dynamoDBClient;
     private List<String> stockSymbols;
     private String bucketName;
+    private AmazonDynamoDB dynamoDBClient;
 
-    public StocksAnalyzer(AmazonS3 s3Client, AmazonDynamoDB dynamoDBClient, List<String> stockSymbols, String bucketName) {
+    public NewsAnalyzer(AmazonS3 s3Client, AmazonDynamoDB dynamoDBClient, List<String> stockSymbols, String bucketName) {
         super(s3Client, bucketName);
         this.s3Client = s3Client;
         this.dynamoDBClient = dynamoDBClient;
@@ -71,16 +68,16 @@ public class StocksAnalyzer extends AbstractAnalyzer {
     }
 
 
-    private StockPrices convertS3JsonToClass(String symbol, String currentDate, String hour) throws IOException {
-        S3Object s3obj = s3Client.getObject(bucketName, String.format("%s/%s/%s/stock.json", currentDate, hour, symbol));
+    private ListOfArticles convertS3JsonToClass(String symbol, String currentDate, String hour) throws IOException {
+        S3Object s3obj = s3Client.getObject(bucketName, String.format("%s/%s/%s/news.json", currentDate, hour, symbol));
         S3ObjectInputStream inputStream = s3obj.getObjectContent();
-        FileUtils.copyInputStreamToFile(inputStream, new File("stock.json"));
+        FileUtils.copyInputStreamToFile(inputStream, new File("news.json"));
 
         //use jackson for json to class conversion
         ObjectMapper mapper = new ObjectMapper();
         // JSON file to Java object
-        StockPrices stockPriceObj = mapper.readValue(new File("stock.json"), StockPrices.class);
-        return stockPriceObj;
+        ListOfArticles stockNewsObj = mapper.readValue(new File("news.json"), ListOfArticles.class);
+        return stockNewsObj;
     }
 
 
@@ -95,42 +92,40 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         }
         for (String symbol : stockSymbols) {
             try {
-                StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
-                //this is for debug only
-                System.out.println(String.format("Symbol = %s",symbol));
-                List <Float> highPricesList = new ArrayList<>();
-                for (Map.Entry<String, TimeSeriesEntry> entry: stockObj.getTimeSeriesEntries().entrySet()) {
-                    highPricesList.add(entry.getValue().getHigh());
+                ListOfArticles stockObj = convertS3JsonToClass(symbol, currentDate, hour);
+                int i = 0;
+                for (Article entry: stockObj.getArticles().subList(0,9)) {
+                    saveNewsArticleToDynamo(i, entry, symbol);
+                    i++;
                 }
-                Float maxPrice = Collections.max(highPricesList);
-                saveStockAnalyticToDynamo(maxPrice, symbol);
             } catch (IOException | SdkClientException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private void saveStockAnalyticToDynamo(Float maxprice, String symbol){
+    private  void saveNewsArticleToDynamo(int articleNum, Article article, String symbol){
         PutItemRequest request = new PutItemRequest();
         request.setTableName("Analytics-testing");
 
         Map<String, AttributeValue> map = new HashMap<>();
         map.put("symb", new AttributeValue().withS(symbol));
-        map.put("type", new AttributeValue().withS("1_maxprice"));
-        map.put("value", new AttributeValue().withN(Float.toString(maxprice)));
+        map.put("type", new AttributeValue().withS(String.format("100_newsarticle_%d", articleNum)));
+        map.put("url", new AttributeValue().withS(article.getUrl()));
+        map.put("url2image", new AttributeValue().withS(article.getUrlToImage()));
+        map.put("desc", new AttributeValue().withS(article.getDescription()));
+        map.put("src", new AttributeValue().withS(article.getSource().getName()));
         request.setItem(map);
         try {
             PutItemResult result = dynamoDBClient.putItem(request);
-            System.out.println(String.format("Saved the high price %f for stock %s",maxprice, symbol));
+            System.out.println(String.format("Saved the article num %d for stock %s", articleNum, symbol));
         } catch (AmazonServiceException e) {
 
             System.out.println(e.getErrorMessage());
 
         }
-
     }
 
 }
-
 
 
