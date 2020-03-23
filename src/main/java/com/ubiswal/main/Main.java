@@ -12,7 +12,24 @@ import com.ubiswal.analytics.StocksAnalyzer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
+class AnalyzerCron extends TimerTask{
+    private final StocksAnalyzer stocksAnalyzer;
+    private final NewsAnalyzer newsAnalyzer;
+
+    AnalyzerCron(StocksAnalyzer stocksAnalyzer, NewsAnalyzer newsAnalyzer){
+        this.stocksAnalyzer = stocksAnalyzer;
+        this.newsAnalyzer = newsAnalyzer;
+    }
+
+    @Override
+    public void run() {
+        stocksAnalyzer.runAnalyzer();
+        newsAnalyzer.runAnalyzer();
+    }
+}
 public class Main {
     public static void main(String args[]){
         final AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(Regions.US_EAST_1).build();
@@ -24,8 +41,10 @@ public class Main {
         stockSymbols.add("MSFT");
         stockSymbols.add("AAPL");
         StocksAnalyzer analyzer = new StocksAnalyzer(s3Client, dynamoDB, stockSymbols, "stocks-testing");
-        analyzer.runAnalyzer();
         NewsAnalyzer newsAnalyzer = new NewsAnalyzer(s3Client, dynamoDB, stockSymbols, "stocks-testing");
-        newsAnalyzer.runAnalyzer();
+        AnalyzerCron analyzerCron = new AnalyzerCron(analyzer, newsAnalyzer);
+
+        Timer timer = new Timer();
+        timer.schedule(analyzerCron, 0, 3600000);
     }
 }
