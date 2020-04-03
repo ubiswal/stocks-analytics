@@ -96,32 +96,75 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         for (String symbol : stockSymbols) {
             try {
                 StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
-                //this is for debug only
-                System.out.println(String.format("Symbol = %s",symbol));
-                List <Float> highPricesList = new ArrayList<>();
-                for (Map.Entry<String, TimeSeriesEntry> entry: stockObj.getTimeSeriesEntries().entrySet()) {
-                    highPricesList.add(entry.getValue().getHigh());
-                }
-                Float maxPrice = Collections.max(highPricesList);
-                saveStockAnalyticToDynamo(maxPrice, symbol);
+                calcMaxPrice(symbol, stockObj);
+                bestTimeForProfitSell(symbol, stockObj);
             } catch (IOException | SdkClientException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private void saveStockAnalyticToDynamo(Float maxprice, String symbol){
+    private void calcMaxPrice(String symbol, StockPrices stockObj){
+        System.out.println(String.format("Symbol = %s",symbol));
+        List <Float> highPricesList = new ArrayList<>();
+        for (Map.Entry<String, TimeSeriesEntry> entry: stockObj.getTimeSeriesEntries().entrySet()) {
+            highPricesList.add(entry.getValue().getHigh());
+        }
+        Float maxPrice = Collections.max(highPricesList);
+        saveStockAnalyticToDynamo("1_maxprice", Float.toString(maxPrice), symbol);
+    }
+
+    private void bestTimeForProfitSell(String symbol, StockPrices stockObj){
+        class TimeAndPriceOfStock{
+            public String timestamp;
+            public float stockValue;
+            TimeAndPriceOfStock(String timestamp, float stockValue){
+                this.timestamp = timestamp;
+                this.stockValue = stockValue;
+            }
+        }
+
+        TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
+        List<TimeAndPriceOfStock> averageStockPrice = new ArrayList<>();
+        for (Map.Entry<String, TimeSeriesEntry> entry: sortedEntries.entrySet()) {
+            float averageStockPricePerInterval = (entry.getValue().getOpen() + entry.getValue().getClose() +entry.getValue().getHigh() + entry.getValue().getLow())/4;
+            averageStockPrice.add(new TimeAndPriceOfStock(entry.getKey(), averageStockPricePerInterval));
+        }
+        float maxProfit = 0;
+        String maxBuyIdx = "";
+        String maxSellIdx = "";
+        for (int i = 1; i < averageStockPrice.size(); i++){
+            for (int j = 0; j < i; j++ ){
+                if (maxProfit < averageStockPrice.get(i).stockValue-averageStockPrice.get(j).stockValue){
+                    maxProfit = averageStockPrice.get(i).stockValue-averageStockPrice.get(j).stockValue;
+                    maxBuyIdx = averageStockPrice.get(j).timestamp;
+                    maxSellIdx = averageStockPrice.get(i).timestamp;
+                }
+            }
+        }
+        if (maxProfit > 0){
+            String result = String.format("A best profit of %f could have been achieved for stock %s if bought at  %s and sold at %s", maxProfit, symbol, maxBuyIdx, maxSellIdx);
+            saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+        }
+        else{
+            String result = String.format("Could not sell stock %s with any profits today!", symbol);
+            saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+        }
+
+
+    }
+
+    private void saveStockAnalyticToDynamo(String analyticType, String analyticValue, String symbol){
         PutItemRequest request = new PutItemRequest();
         request.setTableName("Analytics-testing");
 
         Map<String, AttributeValue> map = new HashMap<>();
         map.put("symb", new AttributeValue().withS(symbol));
-        map.put("type", new AttributeValue().withS("1_maxprice"));
-        map.put("value", new AttributeValue().withN(Float.toString(maxprice)));
+        map.put("type", new AttributeValue().withS(analyticType));
+        map.put("value", new AttributeValue().withS(analyticValue));
         request.setItem(map);
         try {
             PutItemResult result = dynamoDBClient.putItem(request);
-            System.out.println(String.format("Saved the high price %f for stock %s",maxprice, symbol));
         } catch (AmazonServiceException e) {
 
             System.out.println(e.getErrorMessage());
