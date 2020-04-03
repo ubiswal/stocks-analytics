@@ -11,6 +11,7 @@ import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.twitter.logging.Logger;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.io.FileUtils;
@@ -58,6 +59,7 @@ public class NewsAnalyzer extends AbstractAnalyzer {
     private List<String> stockSymbols;
     private String bucketName;
     private AmazonDynamoDB dynamoDBClient;
+    private Logger log = Logger.get(this.getClass());
 
     public NewsAnalyzer(AmazonS3 s3Client, AmazonDynamoDB dynamoDBClient, List<String> stockSymbols, String bucketName) {
         super(s3Client, bucketName);
@@ -87,11 +89,12 @@ public class NewsAnalyzer extends AbstractAnalyzer {
         String currentDate = todaysDate();
         String hour = Integer.toString(findLatestHourInBucket());
         if (hour.equals("-1")){
-            System.out.println(String.format("Did not find any directory with current date %s", currentDate));
+            log.warning(String.format("Did not find any directory with current date %s", currentDate));
             return;
         }
         for (String symbol : stockSymbols) {
             try {
+                log.info(String.format("Running news analyzer for symbol %s",symbol));
                 ListOfArticles stockObj = convertS3JsonToClass(symbol, currentDate, hour);
                 int i = 0;
                 for (Article entry: stockObj.getArticles().subList(0,9)) {
@@ -118,10 +121,10 @@ public class NewsAnalyzer extends AbstractAnalyzer {
         request.setItem(map);
         try {
             PutItemResult result = dynamoDBClient.putItem(request);
-            System.out.println(String.format("Saved the article num %d for stock %s", articleNum, symbol));
+            log.info(String.format("Saved the article num %d for stock %s", articleNum, symbol));
         } catch (AmazonServiceException e) {
 
-            System.out.println(e.getErrorMessage());
+            log.error(e, String.format("Source = %s \nauthor = %s \ndescription = %s \nurl= %s  \nurlToImg =  %s",article.getSource(), article.getAuthor(), article.getDescription(), article.getUrl(), article.getUrlToImage()));
 
         }
     }

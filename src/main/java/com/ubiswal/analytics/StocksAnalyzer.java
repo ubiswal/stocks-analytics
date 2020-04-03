@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.io.FileUtils;
+import com.twitter.logging.Logger;
 
 import java.io.File;
 import java.io.IOException;
@@ -57,10 +58,12 @@ class StockPrices {
 
 
 public class StocksAnalyzer extends AbstractAnalyzer {
+
     private AmazonS3 s3Client;
     private AmazonDynamoDB dynamoDBClient;
     private List<String> stockSymbols;
     private String bucketName;
+    private Logger log = Logger.get(this.getClass());
 
     public StocksAnalyzer(AmazonS3 s3Client, AmazonDynamoDB dynamoDBClient, List<String> stockSymbols, String bucketName) {
         super(s3Client, bucketName);
@@ -90,11 +93,12 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         String currentDate = todaysDate();
         String hour = Integer.toString(findLatestHourInBucket());
         if (hour.equals("-1")){
-            System.out.println(String.format("Did not find any directory with current date %s", currentDate));
+            log.warning(String.format("Did not find any directory with current date %s", currentDate));
             return;
         }
         for (String symbol : stockSymbols) {
             try {
+                log.info(String.format("Running stocks analyzer for symbol %s",symbol));
                 StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
                 calcMaxPrice(symbol, stockObj);
                 bestTimeForProfitSell(symbol, stockObj);
@@ -105,7 +109,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
     }
 
     private void calcMaxPrice(String symbol, StockPrices stockObj){
-        System.out.println(String.format("Symbol = %s",symbol));
+        log.info(String.format("About to calculate max price for Stock Symbol = %s",symbol));
         List <Float> highPricesList = new ArrayList<>();
         for (Map.Entry<String, TimeSeriesEntry> entry: stockObj.getTimeSeriesEntries().entrySet()) {
             highPricesList.add(entry.getValue().getHigh());
@@ -145,10 +149,12 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         if (maxProfit > 0){
             String result = String.format("A best profit of %f could have been achieved for stock %s if bought at  %s and sold at %s", maxProfit, symbol, maxBuyIdx, maxSellIdx);
             saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+            log.info(result);
         }
         else{
             String result = String.format("Could not sell stock %s with any profits today!", symbol);
             saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+            log.info(result);
         }
 
 
@@ -167,7 +173,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
             PutItemResult result = dynamoDBClient.putItem(request);
         } catch (AmazonServiceException e) {
 
-            System.out.println(e.getErrorMessage());
+            log.error(e.getErrorMessage());
 
         }
 
