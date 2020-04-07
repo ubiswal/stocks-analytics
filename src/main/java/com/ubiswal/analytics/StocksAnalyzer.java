@@ -210,7 +210,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         XYSeries series = chart.addSeries(String.format("Stock prices for %s", symbol), null, prices);
         series.setFillColor(new Color(28, 28, 28));
         series.setLineColor(new Color(0x2E, 0xA2, 0x31));
-
+        chart.getStyler().setMarkerSize(0);
         chart.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
         chart.getStyler().setLegendVisible(false);
         chart.getStyler().setPlotGridLinesVisible(true);
