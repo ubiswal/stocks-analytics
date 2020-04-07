@@ -16,11 +16,20 @@ import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.io.FileUtils;
 import com.twitter.logging.Logger;
+import org.apache.http.HttpException;
+import org.knowm.xchart.BitmapEncoder;
+import org.knowm.xchart.VectorGraphicsEncoder;
+import org.knowm.xchart.XYChart;
+import org.knowm.xchart.XYSeries;
 
+import java.awt.*;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 class TimeSeriesEntry {
@@ -64,6 +73,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
     private List<String> stockSymbols;
     private String bucketName;
     private Logger log = Logger.get(this.getClass());
+    private static final String S3_BUCKET_NAME = "ubiswal-website-contents";
 
     public StocksAnalyzer(AmazonS3 s3Client, AmazonDynamoDB dynamoDBClient, List<String> stockSymbols, String bucketName) {
         super(s3Client, bucketName);
@@ -102,7 +112,8 @@ public class StocksAnalyzer extends AbstractAnalyzer {
                 StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
                 calcMaxPrice(symbol, stockObj);
                 bestTimeForProfitSell(symbol, stockObj);
-            } catch (IOException | SdkClientException e) {
+                generateGraphsStockPrices(symbol, stockObj);
+            } catch (IOException | SdkClientException | HttpException e) {
                 e.printStackTrace();
             }
         }
@@ -179,6 +190,41 @@ public class StocksAnalyzer extends AbstractAnalyzer {
 
     }
 
+    private void uploadToS3(String s3KeyName, String localFileName) throws HttpException {
+        try {
+            FileInputStream stream = new FileInputStream(localFileName);
+            PutObjectRequest request = new PutObjectRequest(S3_BUCKET_NAME, s3KeyName, stream, null).withCannedAcl(CannedAccessControlList.PublicRead);
+            s3Client.putObject(request);
+        } catch (SdkClientException | FileNotFoundException e) {
+            throw new HttpException("Failed to upload to s3 because " + e.getMessage());
+        }
+    }
+
+    private void generateGraphsStockPrices(String symbol, StockPrices stockObj) throws IOException, HttpException {
+        TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
+        List<Float> prices = new ArrayList<>();
+        for (Map.Entry<String, TimeSeriesEntry> ts : sortedEntries.entrySet()) {
+            prices.add(ts.getValue().getHigh());
+        }
+        XYChart chart = new XYChart(500, 400);
+        XYSeries series = chart.addSeries(String.format("Stock prices for %s", symbol), null, prices);
+        series.setFillColor(new Color(28, 28, 28));
+        series.setLineColor(new Color(0x2E, 0xA2, 0x31));
+
+        chart.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart.getStyler().setLegendVisible(false);
+        chart.getStyler().setPlotGridLinesVisible(true);
+        chart.getStyler().setPlotGridLinesColor(new Color(0,0,0));
+        chart.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart.getStyler().setPlotBorderVisible(false);
+        chart.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
+        chart.getStyler().setXAxisTicksVisible(false);
+
+        BitmapEncoder.saveBitmap(chart, String.format("./%s.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        String s3KeyName = String.format("%s.jpg", symbol);
+        uploadToS3(s3KeyName, String.format("%s.jpg", symbol));
+
+    }
 }
 
 
