@@ -3,7 +3,6 @@ package com.ubiswal.analytics;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 import com.amazonaws.services.dynamodbv2.model.PutItemResult;
@@ -113,6 +112,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
                 calcMaxPrice(symbol, stockObj);
                 bestTimeForProfitSell(symbol, stockObj);
                 generateGraphsStockPrices(symbol, stockObj);
+                diffInStockPrice(symbol, stockObj);
             } catch (IOException | SdkClientException | HttpException e) {
                 e.printStackTrace();
             }
@@ -157,8 +157,8 @@ public class StocksAnalyzer extends AbstractAnalyzer {
                 }
             }
         }
-        if (maxProfit > 0){
-            String result = String.format("A best profit of %f could have been achieved for stock %s if bought at  %s and sold at %s", maxProfit, symbol, maxBuyIdx, maxSellIdx);
+        if (maxProfit > 0) {
+            String result = String.format("%s;%s;%s", maxProfit, maxBuyIdx, maxSellIdx);
             saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
             log.info(result);
         }
@@ -183,9 +183,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         try {
             PutItemResult result = dynamoDBClient.putItem(request);
         } catch (AmazonServiceException e) {
-
             log.error(e.getErrorMessage());
-
         }
 
     }
@@ -200,30 +198,56 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         }
     }
 
+    private void diffInStockPrice(String symbol, StockPrices stockObj) {
+        log.info(String.format("Checking the diff in stock prices for %s", symbol));
+        TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
+        float start = sortedEntries.firstEntry().getValue().getOpen();
+        float end = sortedEntries.lastEntry().getValue().getClose();
+        saveStockAnalyticToDynamo("3_diff", Float.toString(end-start), symbol);
+    }
+
     private void generateGraphsStockPrices(String symbol, StockPrices stockObj) throws IOException, HttpException {
         TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
         List<Float> prices = new ArrayList<>();
         for (Map.Entry<String, TimeSeriesEntry> ts : sortedEntries.entrySet()) {
             prices.add(ts.getValue().getHigh());
         }
-        XYChart chart = new XYChart(500, 400);
+
+        XYChart chart;
+        if (symbol.equals("DJI")) {
+            chart = new XYChart(800, 300);
+        } else {
+            chart = new XYChart(300, 300);
+        }
+
         XYSeries series = chart.addSeries(String.format("Stock prices for %s", symbol), null, prices);
-        series.setFillColor(new Color(28, 28, 28));
-        series.setLineColor(new Color(0x2E, 0xA2, 0x31));
         chart.getStyler().setMarkerSize(0);
-        chart.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
         chart.getStyler().setLegendVisible(false);
-        chart.getStyler().setPlotGridLinesVisible(true);
-        chart.getStyler().setPlotGridLinesColor(new Color(0,0,0));
-        chart.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart.getStyler().setPlotGridLinesVisible(false);
         chart.getStyler().setPlotBorderVisible(false);
-        chart.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
         chart.getStyler().setXAxisTicksVisible(false);
 
-        BitmapEncoder.saveBitmap(chart, String.format("./%s.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
-        String s3KeyName = String.format("%s.jpg", symbol);
-        uploadToS3(s3KeyName, String.format("%s.jpg", symbol));
+        // Dark graph
+        chart.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
+        series.setFillColor(new Color(28, 28, 28));
+        series.setLineColor(new Color(0x2E, 0xA2, 0x31));
+        chart.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
 
+        BitmapEncoder.saveBitmap(chart, String.format("./%s_dark.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        String s3KeyNameDark = String.format("%s_dark.jpg", symbol);
+        uploadToS3(s3KeyNameDark, String.format("%s_dark.jpg", symbol));
+
+        // Light graph
+        chart.getStyler().setChartBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
+        series.setFillColor(new Color(0xFF, 0xFF, 0xFF));
+        series.setLineColor(new Color(0xFF, 0, 0));
+        chart.getStyler().setPlotBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
+        chart.getStyler().setAxisTickLabelsColor(new Color(0xFF, 0, 0));
+
+        BitmapEncoder.saveBitmap(chart, String.format("./%s_light.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        String s3KeyNameLight = String.format("%s_light.jpg", symbol);
+        uploadToS3(s3KeyNameLight, String.format("%s_light.jpg", symbol));
     }
 }
 
