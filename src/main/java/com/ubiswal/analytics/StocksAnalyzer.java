@@ -213,41 +213,61 @@ public class StocksAnalyzer extends AbstractAnalyzer {
             prices.add(ts.getValue().getHigh());
         }
 
-        XYChart chart;
-        if (symbol.equals("DJI")) {
-            chart = new XYChart(800, 300);
-        } else {
-            chart = new XYChart(300, 300);
-        }
+        XYChart chart1; //smaller size graph
+        XYChart chart2; //larger size graph
 
-        XYSeries series = chart.addSeries(String.format("Stock prices for %s", symbol), null, prices);
-        chart.getStyler().setMarkerSize(0);
-        chart.getStyler().setLegendVisible(false);
-        chart.getStyler().setPlotGridLinesVisible(false);
-        chart.getStyler().setPlotBorderVisible(false);
-        chart.getStyler().setXAxisTicksVisible(false);
+        chart1 = new XYChart(300, 300);
+        chart2 = new XYChart(800, 300);
+
+        XYSeries series1 = chart1.addSeries(String.format("Stock prices for %s", symbol), null, prices);
+        chart1.getStyler().setMarkerSize(0);
+        chart1.getStyler().setLegendVisible(false);
+        chart1.getStyler().setPlotGridLinesVisible(false);
+        chart1.getStyler().setPlotBorderVisible(false);
+        chart1.getStyler().setXAxisTicksVisible(false);
+
+        XYSeries series2 = chart2.addSeries(String.format("Stock prices for %s", symbol), null, prices);
+        chart2.getStyler().setMarkerSize(0);
+        chart2.getStyler().setLegendVisible(false);
+        chart2.getStyler().setPlotGridLinesVisible(false);
+        chart2.getStyler().setPlotBorderVisible(false);
+        chart2.getStyler().setXAxisTicksVisible(false);
 
         // Dark graph
-        chart.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
-        series.setFillColor(new Color(28, 28, 28));
-        series.setLineColor(new Color(0x2E, 0xA2, 0x31));
-        chart.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
-        chart.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
+        //Dark and smaller size graph
+        chart1.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
+        series1.setFillColor(new Color(28, 28, 28));
+        series1.setLineColor(new Color(0x2E, 0xA2, 0x31));
+        chart1.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart1.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
 
-        BitmapEncoder.saveBitmap(chart, String.format("./%s_dark.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
-        String s3KeyNameDark = String.format("%s_dark.jpg", symbol);
-        uploadToS3(s3KeyNameDark, String.format("%s_dark.jpg", symbol));
+        BitmapEncoder.saveBitmap(chart1, String.format("./%s_dark_small.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        String s3KeyNameDarkSmall = String.format("%s_dark_small.jpg", symbol);
+        uploadToS3(s3KeyNameDarkSmall, String.format("%s_dark_small.jpg", symbol));
+
+        //Dark and larger size graph
+        chart2.getStyler().setChartBackgroundColor(new Color(0x28, 0x28, 0x28));
+        series2.setFillColor(new Color(28, 28, 28));
+        series2.setLineColor(new Color(0x2E, 0xA2, 0x31));
+        chart2.getStyler().setPlotBackgroundColor(new Color(0x28, 0x28, 0x28));
+        chart2.getStyler().setAxisTickLabelsColor(new Color(0x2E, 0xA2, 0x31));
+
+        BitmapEncoder.saveBitmap(chart2, String.format("./%s_dark_large.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        String s3KeyNameDarkLarge = String.format("%s_dark_large.jpg", symbol);
+        uploadToS3(s3KeyNameDarkLarge, String.format("%s_dark_large.jpg", symbol));
 
         // Light graph
-        chart.getStyler().setChartBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
-        series.setFillColor(new Color(0xFF, 0xFF, 0xFF));
-        series.setLineColor(new Color(0xFF, 0, 0));
-        chart.getStyler().setPlotBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
-        chart.getStyler().setAxisTickLabelsColor(new Color(0xFF, 0, 0));
+        chart1.getStyler().setChartBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
+        series1.setFillColor(new Color(0xFF, 0xFF, 0xFF));
+        series1.setLineColor(new Color(0xFF, 0, 0));
+        chart1.getStyler().setPlotBackgroundColor(new Color(0xFF, 0xFF, 0xFF));
+        chart1.getStyler().setAxisTickLabelsColor(new Color(0xFF, 0, 0));
 
-        BitmapEncoder.saveBitmap(chart, String.format("./%s_light.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
+        BitmapEncoder.saveBitmap(chart1, String.format("./%s_light.jpg", symbol), BitmapEncoder.BitmapFormat.JPG);
         String s3KeyNameLight = String.format("%s_light.jpg", symbol);
         uploadToS3(s3KeyNameLight, String.format("%s_light.jpg", symbol));
+
+
     }
 }
 
