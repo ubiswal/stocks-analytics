@@ -11,7 +11,7 @@ The list of insights generated is an expanding list. Currently, we generate the 
   - Make related news articles viewable by the UI.
   
 ## Architecture
-The daemon an instance of a `java.util.TimerTask` that calls the different analyzers endlessly, every 2 hours. The analyzer relies on a bunch of 3rd party libraries to function:
+This daemon is an instance of a `java.util.TimerTask` that calls the different analyzers endlessly, every 2 hours. The analyzer relies on a bunch of 3rd party libraries to function:
   - Jackson to de-serialize json.
   - XChart to generate charts.
   - Timer to schedule the daemon.
