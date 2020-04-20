@@ -28,18 +28,28 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 class AnalyzerCron extends TimerTask{
-    private final StocksAnalyzer stocksAnalyzer;
-    private final NewsAnalyzer newsAnalyzer;
+    private final AmazonS3 s3Client;
+    private final AmazonDynamoDB dynamoDB;
+    private Logger log = Logger.get(this.getClass());
 
-    AnalyzerCron(StocksAnalyzer stocksAnalyzer, NewsAnalyzer newsAnalyzer){
-        this.stocksAnalyzer = stocksAnalyzer;
-        this.newsAnalyzer = newsAnalyzer;
+    AnalyzerCron(AmazonS3 s3Client, AmazonDynamoDB dynamoDb){
+        this.s3Client = s3Client;
+        this.dynamoDB = dynamoDb;
     }
 
     @Override
     public void run() {
-        stocksAnalyzer.runAnalyzer();
-        newsAnalyzer.runAnalyzer();
+        try {
+            log.info("fetching config");
+            Config configObj = Main.getConfig(s3Client);
+            log.info(String.format("Running analysis for %s", configObj.getStockSymbols()));
+            StocksAnalyzer stocksAnalyzer = new StocksAnalyzer(s3Client, dynamoDB, configObj.getStockSymbols(), "stocks-testing");
+            NewsAnalyzer newsAnalyzer = new NewsAnalyzer(s3Client, dynamoDB, configObj.getStockSymbols(), "stocks-testing");
+            stocksAnalyzer.runAnalyzer();
+            newsAnalyzer.runAnalyzer();
+        } catch (IOException e) {
+            log.error("Failed to run analyzer for this batch. Will try again in 2 hours.");
+        }
     }
 }
 public class Main {
@@ -47,21 +57,17 @@ public class Main {
 
     public static void main(String args[]) throws IOException {
         final AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(Regions.US_EAST_1).build();
-        Config configObj = getConfig(s3Client);
         AmazonDynamoDB dynamoDB = AmazonDynamoDBClientBuilder
                 .standard()
                 .withRegion(Regions.US_EAST_1)
                 .build();
-
-        StocksAnalyzer analyzer = new StocksAnalyzer(s3Client, dynamoDB, configObj.getStockSymbols(), "stocks-testing");
-        NewsAnalyzer newsAnalyzer = new NewsAnalyzer(s3Client, dynamoDB, configObj.getStockSymbols(), "stocks-testing");
-        AnalyzerCron analyzerCron = new AnalyzerCron(analyzer, newsAnalyzer);
+        AnalyzerCron analyzerCron = new AnalyzerCron(s3Client, dynamoDB);
 
         Timer timer = new Timer();
         timer.schedule(analyzerCron, 0, 3600000);
     }
 
-    private static Config getConfig(final AmazonS3 s3Client) throws IOException {
+    public static Config getConfig(final AmazonS3 s3Client) throws IOException {
         try {
             S3Object s3obj = s3Client.getObject(BUCKETNAME , "config.json");
             S3ObjectInputStream inputStream = s3obj.getObjectContent();

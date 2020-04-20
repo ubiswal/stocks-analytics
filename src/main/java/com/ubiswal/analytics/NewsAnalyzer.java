@@ -69,6 +69,11 @@ public class NewsAnalyzer extends AbstractAnalyzer {
         this.bucketName = bucketName;
     }
 
+    private boolean validateArticle(Article article) {
+        return (article.getUrl() != null && article.getUrl().trim() != "") &&
+                (article.getAuthor() != null && article.getAuthor().trim() != "") &&
+                (article.getDescription() != null && article.getDescription().trim() != "");
+    }
 
     private ListOfArticles convertS3JsonToClass(String symbol, String currentDate, String hour) throws IOException {
         S3Object s3obj = s3Client.getObject(bucketName, String.format("%s/%s/%s/news.json", currentDate, hour, symbol));
@@ -97,7 +102,11 @@ public class NewsAnalyzer extends AbstractAnalyzer {
                 log.info(String.format("Running news analyzer for symbol %s",symbol));
                 ListOfArticles stockObj = convertS3JsonToClass(symbol, currentDate, hour);
                 int i = 0;
-                for (Article entry: stockObj.getArticles().subList(0,9)) {
+                for (Article entry: stockObj.getArticles().subList(0,Math.min(9, stockObj.getArticles().size()))) {
+                    if(!validateArticle(entry)) {
+                        log.error(String.format("The following article failed validation. Skipping.:\n%s\n", entry));
+                        continue;
+                    }
                     saveNewsArticleToDynamo(i, entry, symbol);
                     i++;
                 }
@@ -115,7 +124,12 @@ public class NewsAnalyzer extends AbstractAnalyzer {
         map.put("symb", new AttributeValue().withS(symbol));
         map.put("type", new AttributeValue().withS(String.format("100_newsarticle_%d", articleNum)));
         map.put("url", new AttributeValue().withS(article.getUrl()));
-        map.put("url2image", new AttributeValue().withS(article.getUrlToImage()));
+        if (article.getUrlToImage() == null) {
+            log.warning(String.format("Url to image is empty for news article for symbol %s article %s", symbol, article.getDescription()));
+            map.put("url2image", new AttributeValue().withS("https://ubiswal-website-contents.s3.amazonaws.com/news-icon.png"));
+        } else {
+            map.put("url2image", new AttributeValue().withS(article.getUrlToImage()));
+        }
         map.put("desc", new AttributeValue().withS(article.getDescription()));
         map.put("src", new AttributeValue().withS(article.getSource().getName()));
         request.setItem(map);
@@ -124,7 +138,7 @@ public class NewsAnalyzer extends AbstractAnalyzer {
             log.info(String.format("Saved the article num %d for stock %s", articleNum, symbol));
         } catch (AmazonServiceException e) {
 
-            log.error(e, String.format("Source = %s \nauthor = %s \ndescription = %s \nurl= %s  \nurlToImg =  %s",article.getSource(), article.getAuthor(), article.getDescription(), article.getUrl(), article.getUrlToImage()));
+            log.error(e, String.format("Source = %s\nauthor = %s\ndescription = %s\nurl= %s\nurlToImg =  %s",article.getSource(), article.getAuthor(), article.getDescription(), article.getUrl(), article.getUrlToImage()));
 
         }
     }

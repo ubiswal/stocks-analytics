@@ -82,6 +82,13 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         this.bucketName = bucketName;
     }
 
+    private boolean validateStockPricesForSymbol(StockPrices obj) {
+        if (obj.getTimeSeriesEntries() == null) {
+            return false;
+        } else {
+            return true;
+        }
+    }
 
     private StockPrices convertS3JsonToClass(String symbol, String currentDate, String hour) throws IOException {
         S3Object s3obj = s3Client.getObject(bucketName, String.format("%s/%s/%s/stock.json", currentDate, hour, symbol));
@@ -104,11 +111,18 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         if (hour.equals("-1")){
             log.warning(String.format("Did not find any directory with current date %s", currentDate));
             return;
+        } else {
+            log.info(String.format("Getting all data for %s -- %s hours", currentDate, hour));
         }
         for (String symbol : stockSymbols) {
             try {
                 log.info(String.format("Running stocks analyzer for symbol %s",symbol));
                 StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
+                if(!validateStockPricesForSymbol(stockObj)) {
+                    log.warning(String.format("Failed to generate data for symbol %s", symbol));
+                    // TODO: Add code to delete any entries for this symbol in dynamo DB
+                    continue;
+                }
                 calcMaxPrice(symbol, stockObj);
                 bestTimeForProfitSell(symbol, stockObj);
                 generateGraphsStockPrices(symbol, stockObj);
