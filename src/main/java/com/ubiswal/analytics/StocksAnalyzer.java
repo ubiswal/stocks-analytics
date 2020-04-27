@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
@@ -63,7 +64,6 @@ class StockPrices {
     @JsonProperty("Time Series (5min)")
     private Map<String, TimeSeriesEntry> timeSeriesEntries;
 }
-
 
 public class StocksAnalyzer extends AbstractAnalyzer {
 
@@ -118,32 +118,63 @@ public class StocksAnalyzer extends AbstractAnalyzer {
             try {
                 log.info(String.format("Running stocks analyzer for symbol %s",symbol));
                 StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
+                boolean freshness = isDataFresh(symbol, stockObj);
+
                 if(!validateStockPricesForSymbol(stockObj)) {
                     log.warning(String.format("Failed to generate data for symbol %s", symbol));
                     // TODO: Add code to delete any entries for this symbol in dynamo DB
                     continue;
                 }
-                calcMaxPrice(symbol, stockObj);
-                bestTimeForProfitSell(symbol, stockObj);
+                calcMaxPrice(symbol, stockObj, freshness);
+                bestTimeForProfitSell(symbol, stockObj, freshness);
                 generateGraphsStockPrices(symbol, stockObj);
-                diffInStockPrice(symbol, stockObj);
+                diffInStockPrice(symbol, stockObj, freshness);
             } catch (IOException | SdkClientException | HttpException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private void calcMaxPrice(String symbol, StockPrices stockObj){
+    public boolean isDataFresh(String stockSymbol, StockPrices stockObj) {
+        TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
+        if(sortedEntries.size() > 0) {
+            String greatestTimeStamp = sortedEntries.lastEntry().getKey();
+            try {
+                Calendar calendar = GregorianCalendar.getInstance();
+                Date providedDate = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss").parse(greatestTimeStamp);
+                calendar.setTime(providedDate);
+                int providedDay = calendar.get(Calendar.DAY_OF_MONTH);
+
+                Date currentDate = new Date();
+                calendar.setTime(currentDate);
+                int currentDay = calendar.get(Calendar.DAY_OF_MONTH);
+
+                if (providedDay < currentDay-1) {
+                    log.warning(String.format("Data for %s is stale", stockSymbol));
+                    return false;
+                } else {
+                    log.info(String.format("Data for %s is fresh", stockSymbol));
+                    return true;
+                }
+            } catch (ParseException e) {
+                log.error(e, String.format("Could not parse date provided by alpha vantage (%s). Expected format was yyyy-MM-dd hh:mm:ss. Will assume data as fresh"));
+                return true;
+            }
+        }
+        return true;
+    }
+
+    private void calcMaxPrice(String symbol, StockPrices stockObj, boolean fresh){
         log.info(String.format("About to calculate max price for Stock Symbol = %s",symbol));
         List <Float> highPricesList = new ArrayList<>();
         for (Map.Entry<String, TimeSeriesEntry> entry: stockObj.getTimeSeriesEntries().entrySet()) {
             highPricesList.add(entry.getValue().getHigh());
         }
         Float maxPrice = Collections.max(highPricesList);
-        saveStockAnalyticToDynamo("1_maxprice", Float.toString(maxPrice), symbol);
+        saveStockAnalyticToDynamo("1_maxprice", Float.toString(maxPrice), symbol, fresh? "fresh" : "stale");
     }
 
-    private void bestTimeForProfitSell(String symbol, StockPrices stockObj){
+    private void bestTimeForProfitSell(String symbol, StockPrices stockObj, boolean fresh){
         class TimeAndPriceOfStock{
             public String timestamp;
             public float stockValue;
@@ -173,19 +204,19 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         }
         if (maxProfit > 0) {
             String result = String.format("%s;%s;%s", maxProfit, maxBuyIdx, maxSellIdx);
-            saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+            saveStockAnalyticToDynamo("2_bestProfit", result, symbol, fresh? "fresh" : "stale");
             log.info(result);
         }
         else{
-            String result = String.format("Could not sell stock %s with any profits today!", symbol);
-            saveStockAnalyticToDynamo("2_bestProfit", result, symbol);
+            String result = "0:-1:-1";
+            saveStockAnalyticToDynamo("2_bestProfit", result, symbol, fresh? "fresh" : "stale");
             log.info(result);
         }
 
 
     }
 
-    private void saveStockAnalyticToDynamo(String analyticType, String analyticValue, String symbol){
+    private void saveStockAnalyticToDynamo(String analyticType, String analyticValue, String symbol, String status){
         PutItemRequest request = new PutItemRequest();
         request.setTableName("Analytics-testing");
 
@@ -193,6 +224,7 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         map.put("symb", new AttributeValue().withS(symbol));
         map.put("type", new AttributeValue().withS(analyticType));
         map.put("value", new AttributeValue().withS(analyticValue));
+        map.put("status", new AttributeValue().withS(status));
         request.setItem(map);
         try {
             PutItemResult result = dynamoDBClient.putItem(request);
@@ -212,12 +244,12 @@ public class StocksAnalyzer extends AbstractAnalyzer {
         }
     }
 
-    private void diffInStockPrice(String symbol, StockPrices stockObj) {
+    private void diffInStockPrice(String symbol, StockPrices stockObj, boolean fresh) {
         log.info(String.format("Checking the diff in stock prices for %s", symbol));
         TreeMap<String, TimeSeriesEntry> sortedEntries = new TreeMap<>(stockObj.getTimeSeriesEntries());
         float start = sortedEntries.firstEntry().getValue().getOpen();
         float end = sortedEntries.lastEntry().getValue().getClose();
-        saveStockAnalyticToDynamo("3_diff", Float.toString(end-start), symbol);
+        saveStockAnalyticToDynamo("3_diff", Float.toString(end-start), symbol, fresh? "fresh" : "stale");
     }
 
     private void generateGraphsStockPrices(String symbol, StockPrices stockObj) throws IOException, HttpException {
