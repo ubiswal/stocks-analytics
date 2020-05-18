@@ -66,7 +66,6 @@ class StockPrices {
 }
 
 public class StocksAnalyzer extends AbstractAnalyzer {
-
     private AmazonS3 s3Client;
     private AmazonDynamoDB dynamoDBClient;
     private List<String> stockSymbols;
@@ -106,18 +105,21 @@ public class StocksAnalyzer extends AbstractAnalyzer {
     //convert all stocks json to Objects
     @Override
     public void runAnalyzer() {
-        String currentDate = todaysDate();
-        String hour = Integer.toString(findLatestHourInBucket());
-        if (hour.equals("-1")){
-            log.warning(String.format("Did not find any directory with current date %s", currentDate));
+        String analysisHour = Integer.toString(findLatestHourInBucket());
+        if (analysisHour.equals("-1")){
+            log.warning(String.format("Did not find any directory with current date %s", analysisDate));
             return;
         } else {
-            log.info(String.format("Getting all data for %s -- %s hours", currentDate, hour));
+            log.info(String.format("Getting all data for %s -- %s hours", analysisDate, analysisHour));
         }
         for (String symbol : stockSymbols) {
             try {
                 log.info(String.format("Running stocks analyzer for symbol %s",symbol));
-                StockPrices stockObj = convertS3JsonToClass(symbol, currentDate, hour);
+                StockPrices stockObj = convertS3JsonToClass(symbol, analysisDate, analysisHour);
+                if(stockObj == null || stockObj.getTimeSeriesEntries() == null) {
+                    log.error(String.format("Failed to fetch stock data for %s. You may be out of call quota. Please check the crawler.", symbol));
+                    continue;
+                }
                 boolean freshness = isDataFresh(symbol, stockObj);
 
                 if(!validateStockPricesForSymbol(stockObj)) {

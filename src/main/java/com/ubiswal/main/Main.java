@@ -1,8 +1,6 @@
 package com.ubiswal.main;
 
 import com.amazonaws.SdkClientException;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
@@ -11,19 +9,14 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.twitter.logging.FileHandler;
-import com.twitter.logging.LoggerFactory;
 import com.ubiswal.analytics.NewsAnalyzer;
 import com.ubiswal.analytics.StocksAnalyzer;
 import com.twitter.logging.Logger;
-import com.twitter.logging.Handler;
 import com.ubiswal.config.Config;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 

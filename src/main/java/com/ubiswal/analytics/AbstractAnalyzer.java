@@ -7,18 +7,24 @@ import com.amazonaws.services.s3.model.S3ObjectSummary;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.TimeZone;
 
 abstract public class AbstractAnalyzer {
-    protected String bucketName;
-    protected AmazonS3 s3Client;
+    protected final String bucketName;
+    protected final AmazonS3 s3Client;
+    protected final String analysisDate;
+    protected final String analysisHour;
 
     public AbstractAnalyzer(AmazonS3 s3Client, String bucketName) {
         this.s3Client = s3Client;
         this.bucketName = bucketName;
+        this.analysisDate = todaysDate();
+        this.analysisHour = Integer.toString(findLatestHourInBucket());
     }
 
     protected String todaysDate() {
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+        formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         Date date = new Date();
         String currentDate = formatter.format(date);
         return currentDate;
